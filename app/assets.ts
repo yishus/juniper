@@ -1,14 +1,24 @@
-import { fileURLToPath } from 'node:url'
-import { createAssetServer } from 'remix/assets'
+import type { ScriptEntry } from 'remix/assets'
 
-import { assetConfig, browserEntry } from './asset-config.ts'
+import { browserEntry } from './asset-config.ts'
 
-// Node-only asset compiler for source-level router tests. The Worker build replaces
-// this module with assets.worker.ts; development runs the same Worker as deployment.
-export const assets = createAssetServer({
-  ...assetConfig,
-  rootDir: fileURLToPath(new URL('..', import.meta.url)),
-  watch: false,
-})
+// Inlined by scripts/build.ts; the Worker never reads files or compiles assets.
+declare const __ASSET_MANIFEST__: Record<string, ScriptEntry>
+const entries = __ASSET_MANIFEST__
 
-export const scriptEntry = await assets.getScriptEntry(browserEntry)
+export const assets = {
+  async getScriptEntry(sourceId: string): Promise<ScriptEntry> {
+    const key = sourceId.startsWith('file:')
+      ? decodeURIComponent(new URL(sourceId).pathname).slice(1)
+      : sourceId
+    const entry = entries[key]
+    if (!entry) throw new Error(`Missing built browser entry: ${key}`)
+    return entry
+  },
+  async fetch(_request: Request): Promise<null> {
+    // Existing files are served by Workers Static Assets before reaching the router.
+    return null
+  },
+}
+
+export const scriptEntry = entries[browserEntry]

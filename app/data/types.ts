@@ -33,7 +33,7 @@ export interface Article extends ArticleSummary {
 
 export interface TranscriptCue { start: number; end: number; text: string }
 
-// The small binding surface used by this app also makes storage easy to test.
+// The D1 statement methods used by this app.
 interface Statement {
   bind(...values: (string | number | null)[]): Statement
   run(): Promise<unknown>

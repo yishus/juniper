@@ -6,7 +6,7 @@ import { eq, exists } from 'drizzle-orm'
 import type { BatchItem } from 'drizzle-orm/batch'
 
 export function database(binding: AppEnv['DB']) {
-  // The app exposes the prepare/batch surface shared by D1 and test fixtures.
+  // The app exposes D1's prepare/batch surface.
   // Drizzle's D1 driver uses that surface; other D1 methods are not needed here.
   return drizzle(binding as D1Database, { schema })
 }
