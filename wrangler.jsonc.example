@@ -1,0 +1,64 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "juniper",
+  "main": "dist/worker.js",
+  "compatibility_date": "2026-10-11",
+  "compatibility_flags": ["nodejs_compat"],
+  "no_bundle": true,
+  "vars": {
+    "BETTER_AUTH_URL": "https://YOUR-WORKER.workers.dev",
+    "TURNSTILE_SITE_KEY": "YOUR_PUBLIC_TURNSTILE_SITE_KEY",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "juniper-articles",
+      // Replace with the ID returned by `npx wrangler d1 create juniper-articles`.
+      "database_id": "YOUR_D1_DATABASE_ID",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "r2_buckets": [
+    {
+      "binding": "IMAGES",
+      "bucket_name": "juniper-images",
+    },
+  ],
+  "ai": {
+    "binding": "AI",
+  },
+  "vectorize": [
+    {
+      "binding": "VECTORS",
+      "index_name": "juniper-passages",
+    },
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "SEARCH_QUEUE",
+        "queue": "juniper-search",
+      },
+    ],
+    "consumers": [
+      {
+        "queue": "juniper-search",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_retries": 10,
+        "retry_delay": 30,
+        "max_concurrency": 1,
+      },
+    ],
+  },
+  "triggers": {
+    "crons": ["*/15 * * * *"],
+  },
+  "build": {
+    "command": "npm run build",
+    "watch_dir": ["app", "scripts", "worker.ts", "public", "tsconfig.json"],
+  },
+  "assets": {
+    "directory": "./dist/public",
+  },
+}

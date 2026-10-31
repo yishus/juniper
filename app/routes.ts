@@ -1,0 +1,26 @@
+import { get, post, route } from 'remix/routes'
+
+export const routes = route({
+  assets: get('/assets/*path'),
+  home: '/',
+  login: get('/login'),
+  loginSubmit: post('/login'),
+  signup: get('/signup'),
+  signupSubmit: post('/signup'),
+  auth: '/api/auth/*path',
+  account: get('/account'),
+  mcpToken: post('/account/mcp-token'),
+  logout: post('/logout'),
+  mcp: '/mcp',
+  save: post('/articles'),
+  article: get('/articles/:id'),
+  deleteArticle: post('/articles/:id/delete'),
+  readingList: post('/articles/:id/reading-list'),
+  quoteNote: post('/articles/:id/note'),
+  videoTranscript: post('/articles/:id/transcript'),
+  createHighlight: post('/articles/:id/highlights'),
+  updateHighlight: post('/articles/:id/highlights/:highlightId/note'),
+  deleteHighlight: post('/articles/:id/highlights/:highlightId/delete'),
+  markdown: get('/articles/:id/markdown'),
+  image: get('/images/:id/*file'),
+})

@@ -1,0 +1,10 @@
+# Canonical local origin. Use your deployed HTTPS origin in production.
+BETTER_AUTH_URL=http://localhost:8787
+# Comma-separated email allowlist (Worker secret in production).
+AUTH_ALLOWED_EMAILS=you@example.com,friend@example.com
+# Generate an independent secret with: openssl rand -hex 32
+BETTER_AUTH_SECRET=
+# Create a Cloudflare Turnstile widget for your app hostname.
+# The site key is public; the secret key must stay private.
+TURNSTILE_SITE_KEY=
+TURNSTILE_SECRET_KEY=
