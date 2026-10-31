@@ -1,5 +1,5 @@
 export interface ArticleSummary {
-  kind: 'article' | 'quote' | 'video'
+  kind: 'article' | 'quote' | 'video' | 'bookmark'
   quote?: { text: string; handle: string | null; postId: string; note: string }
   video?: { videoId: string; duration: number | null; note: string }
   id: string

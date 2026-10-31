@@ -5,13 +5,14 @@ import { youtubeVideo, videoTime } from './youtube.ts'
 import { routes } from '../../routes.ts'
 import { ArrowPathIcon, ArrowUpIcon, BookmarkIcon, DocumentTextIcon, EllipsisVerticalIcon, LinkIcon, MagnifyingGlassIcon, TrashIcon, XMarkIcon } from './icons.tsx'
 
-export const Library = clientEntry(import.meta.url + '#Library', function Library(handle: Handle<{ articles: ArticleSummary[]; initialError?: string; initialDraft?: QuoteDraft }>) {
+export const Library = clientEntry(import.meta.url + '#Library', function Library(handle: Handle<{ articles: ArticleSummary[]; initialError?: string; initialDraft?: QuoteDraft; initialBookmark?: boolean; initialUrl?: string }>) {
   let articles = handle.props.articles
   let query = ''
   let sort = 'newest'
   let kind = 'all'
   let draft = handle.props.initialDraft
-  let urlValue = draft?.url ?? ''
+  let urlValue = draft?.url ?? handle.props.initialUrl ?? ''
+  let bookmark = handle.props.initialBookmark ?? false
   let pending = false
   let deletingId = ''
   let updatingId = ''
@@ -34,7 +35,7 @@ export const Library = clientEntry(import.meta.url + '#Library', function Librar
       if (response.status !== 404 && (!response.ok || !result.deleted)) throw new Error(result.error ?? 'Could not delete this article. Please try again.')
       articles = articles.filter(item => item.id !== article.id)
       if (!articles.length) query = ''
-      notice = article.kind === 'video' ? 'Video deleted.' : article.kind === 'quote' ? 'Quote deleted.' : 'Article deleted.'
+      notice = article.kind === 'bookmark' ? 'Bookmark deleted.' : article.kind === 'video' ? 'Video deleted.' : article.kind === 'quote' ? 'Quote deleted.' : 'Article deleted.'
       await handle.update()
       if (nextLink?.isConnected) nextLink.focus({ preventScroll: true })
       else document.getElementById('add-article-trigger')?.focus({ preventScroll: true })
@@ -82,7 +83,7 @@ export const Library = clientEntry(import.meta.url + '#Library', function Librar
   })
 
   return () => {
-    const filtered = articles.filter(article => (kind === 'all' || (article.kind ?? 'article') === kind) && `${article.title} ${article.quote?.text ?? article.description} ${article.video?.note ?? article.quote?.note ?? ''} ${article.quote?.handle ?? ''} ${article.site} ${article.author ?? ''}`.toLowerCase().includes(query.toLowerCase()))
+    const filtered = articles.filter(article => (kind === 'all' || (article.kind ?? 'article') === kind) && `${article.title} ${article.quote?.text ?? article.description} ${article.video?.note ?? article.quote?.note ?? ''} ${article.quote?.handle ?? ''} ${article.site} ${article.url} ${article.author ?? ''}`.toLowerCase().includes(query.toLowerCase()))
       .sort((a, b) => sort === 'oldest' ? a.savedAt.localeCompare(b.savedAt) : sort === 'title' ? a.title.localeCompare(b.title) : b.savedAt.localeCompare(a.savedAt))
     const toRead = articles.filter(article => article.kind === 'article' && article.inReadingList)
     const busyId = deletingId || updatingId
@@ -111,7 +112,7 @@ export const Library = clientEntry(import.meta.url + '#Library', function Librar
         ]}
       >
         <div class="mb-4 flex items-center justify-between gap-4">
-          <h2 id="add-article-title" class="text-sm font-semibold">{draft ? 'Review quote' : 'Add article or quote'}</h2>
+          <h2 id="add-article-title" class="text-sm font-semibold">{draft ? 'Review quote' : 'Add to your library'}</h2>
           {handle.props.initialDraft ? <a href={routes.home.href()} class="text-xs underline">Cancel</a> : <button type="button" popoverTarget="add-article" popoverTargetAction="hide" aria-label="Close add form" class="flex size-7 items-center justify-center rounded-md text-subtle hover:bg-control hover:text-ink"><XMarkIcon class="size-4" /></button>}
         </div>
         <form method="post" action={routes.save.href()} aria-busy={pending} mix={on('submit', async event => {
@@ -135,9 +136,9 @@ export const Library = clientEntry(import.meta.url + '#Library', function Librar
             articles = [article, ...articles.filter(item => item.id !== article.id)]
             query = ''
             kind = 'all'
-            notice = result.duplicate ? 'This item is already in your library.' : article.kind === 'video' ? 'Video saved. Open it to highlight moments.' : article.kind === 'quote' ? 'Quote saved.' : article.warnings.length ? `Article saved. ${article.warnings.length} image${article.warnings.length === 1 ? '' : 's'} could not be downloaded.` : 'Article saved.'
+            notice = result.duplicate ? 'This item is already in your library.' : article.kind === 'bookmark' ? 'Bookmark saved.' : article.kind === 'video' ? 'Video saved. Open it to highlight moments.' : article.kind === 'quote' ? 'Quote saved.' : article.warnings.length ? `Article saved. ${article.warnings.length} image${article.warnings.length === 1 ? '' : 's'} could not be downloaded.` : 'Article saved.'
             form.reset()
-            draft = undefined; urlValue = ''
+            draft = undefined; urlValue = ''; bookmark = false
             if (popover?.hasAttribute('popover')) popover.hidePopover()
           } catch (failure) {
             if (handle.signal.aborted) return
@@ -146,11 +147,15 @@ export const Library = clientEntry(import.meta.url + '#Library', function Librar
             if (!handle.signal.aborted) { pending = false; handle.update() }
           }
         })}>
-          <label class="sr-only" for="article-url">Article, YouTube video, or X post URL</label>
+          <label class="sr-only" for="article-url">Website, article, YouTube video, or X post URL</label>
           <div class="flex items-center gap-2.5 rounded-lg border border-line-strong px-3 focus-within:border-ink focus-within:ring-2 focus-within:ring-control">
             <span class="shrink-0 text-subtle [&>svg]:size-4" aria-hidden="true"><LinkIcon /></span>
-            <input id="article-url" class="w-full min-w-0 bg-transparent py-3 text-sm outline-none placeholder:text-subtle disabled:opacity-60 max-[760px]:text-base" name="url" type="url" placeholder="Paste an article, YouTube, or X URL…" required maxLength={4096} autoComplete="url" autoFocus disabled={pending} readOnly={Boolean(draft)} value={urlValue} mix={[ref(node => { urlInput = node }), on('input', event => { urlValue = event.currentTarget.value; handle.update() })]} />
+            <input id="article-url" class="w-full min-w-0 bg-transparent py-3 text-sm outline-none placeholder:text-subtle disabled:opacity-60 max-[760px]:text-base" name="url" type="url" placeholder={bookmark ? 'Paste a website URL…' : 'Paste an article, YouTube, or X URL…'} required maxLength={4096} autoComplete="url" autoFocus disabled={pending} readOnly={Boolean(draft)} value={urlValue} mix={[ref(node => { urlInput = node }), on('input', event => { urlValue = event.currentTarget.value; handle.update() })]} />
           </div>
+          {!draft && <label class="mt-4 flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed">
+            <input name="kind" type="checkbox" value="bookmark" checked={bookmark} disabled={pending} class="mt-0.5 size-3.5 shrink-0 accent-ink" mix={on('change', event => { bookmark = event.currentTarget.checked; handle.update() })} />
+            <span><span class="block font-medium">Save as bookmark</span><span class="text-muted">Keep a beautiful website to revisit. Opens the original site.</span></span>
+          </label>}
           {draft && <div class="mt-4 space-y-3">
             {draft.warning && <p class="text-xs leading-relaxed text-muted" role="status">{draft.warning}</p>}
             <label class="block text-xs font-medium" for="quote-text">Quote text</label>
@@ -163,9 +168,9 @@ export const Library = clientEntry(import.meta.url + '#Library', function Librar
           </div>}
           <button class="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-ink px-4 py-2.5 text-xs font-semibold text-paper transition-colors hover:bg-accent-hover disabled:opacity-60" type="submit" disabled={pending}>
             {pending && <ArrowPathIcon class="size-4 animate-spin" />}
-            {pending ? draft ? 'Saving quote…' : xPost(urlValue) ? 'Capturing quote…' : youtubeVideo(urlValue) ? 'Saving video…' : 'Saving item…' : draft ? 'Save quote' : xPost(urlValue) ? 'Preview quote' : youtubeVideo(urlValue) ? 'Save video' : 'Save item'}
+            {pending ? bookmark ? 'Saving bookmark…' : draft ? 'Saving quote…' : xPost(urlValue) ? 'Capturing quote…' : youtubeVideo(urlValue) ? 'Saving video…' : 'Saving item…' : bookmark ? 'Save bookmark' : draft ? 'Save quote' : xPost(urlValue) ? 'Preview quote' : youtubeVideo(urlValue) ? 'Save video' : 'Save item'}
           </button>
-          {draft ? <button type="button" disabled={pending} class="mt-3 text-xs text-muted underline underline-offset-4" mix={on('click', () => { draft = undefined; error = ''; handle.update() })}>Change link</button> : <button type="submit" name="capture" value="manual" disabled={pending} class="mt-3 text-xs text-muted underline underline-offset-4">Paste quote text instead (X link)</button>}
+          {draft ? <button type="button" disabled={pending} class="mt-3 text-xs text-muted underline underline-offset-4" mix={on('click', () => { draft = undefined; error = ''; handle.update() })}>Change link</button> : !bookmark && <button type="submit" name="capture" value="manual" disabled={pending} class="mt-3 text-xs text-muted underline underline-offset-4">Paste quote text instead (X link)</button>}
         </form>
         {error && <p class="mt-3 rounded-lg border border-line-strong border-l-[3px] border-l-ink bg-surface p-3 text-xs" role="alert">{error}</p>}
       </section>
@@ -207,14 +212,14 @@ export const Library = clientEntry(import.meta.url + '#Library', function Librar
             </select>
           </div>
         </div>
-        <div class="mb-4 flex gap-2" role="group" aria-label="Filter by type">
-          {(['all', 'article', 'quote', 'video'] as const).map(value => <button type="button" aria-pressed={kind === value} class={`rounded-md border px-3 py-1.5 text-xs ${kind === value ? 'border-ink bg-ink text-paper' : 'border-line text-muted hover:bg-control'}`} mix={on('click', () => { kind = value; handle.update() })}>{value === 'all' ? 'All' : value === 'article' ? 'Articles' : value === 'video' ? 'Videos' : 'Quotes'}</button>)}
+        <div class="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filter by type">
+          {(['all', 'article', 'quote', 'video', 'bookmark'] as const).map(value => <button type="button" aria-pressed={kind === value} class={`rounded-md border px-3 py-1.5 text-xs ${kind === value ? 'border-ink bg-ink text-paper' : 'border-line text-muted hover:bg-control'}`} mix={on('click', () => { kind = value; handle.update() })}>{value === 'all' ? 'All' : value === 'article' ? 'Articles' : value === 'video' ? 'Videos' : value === 'bookmark' ? 'Bookmarks' : 'Quotes'}</button>)}
         </div>
         {!articles.length ? <div class="canvas-dots flex min-h-[366px] flex-col items-center justify-center rounded-xl border border-line bg-surface px-6 py-8 text-center max-[420px]:px-4 min-[1400px]:min-h-[390px]">
           <div class="mb-[22px] text-ink" aria-hidden="true"><DocumentTextIcon class="size-20" /></div>
           <p class="mb-2.5 font-mono text-[9px] tracking-[1px] text-subtle">THE START OF SOMETHING GOOD</p>
           <h3 class="mb-3 text-2xl leading-[1.3] font-semibold tracking-[-.8px] max-[760px]:text-[22px] max-[420px]:text-[21px]">Leave a little something for later.</h3>
-          <p class="text-xs leading-[1.8] text-muted">An interesting idea. A story you want to sit with.<br />Save an article, a YouTube video, or a quote from X.</p>
+          <p class="text-xs leading-[1.8] text-muted">An interesting idea. A beautifully made website.<br />Save an article, video, quote, or bookmark.</p>
           <button class="mt-[22px] flex items-center gap-2.5 rounded-full border border-line-strong bg-paper px-3.5 py-2 text-[11px] font-medium transition-colors hover:border-ink hover:bg-control" type="button" popoverTarget="add-article">Save your first item <ArrowUpIcon class="size-3.5" /></button>
         </div> : !filtered.length ? <div class="rounded-xl border border-line bg-surface px-5 py-[70px] text-center">
           <span class="text-subtle [&>svg]:mx-auto"><MagnifyingGlassIcon /></span>
@@ -252,12 +257,12 @@ function ArticleRow(handle: Handle<ArticleActionProps>) {
       <div class="absolute top-5 right-0"><ArticleActions {...handle.props} scope="saved" /></div>
     </article>
     return <article id={`saved-article-${article.id}`} class="relative border-b border-line">
-      <a data-article-link="" class="group flex items-start gap-[22px] rounded-md py-[26px] transition-colors hover:bg-surface max-[760px]:gap-[15px]" href={routes.article.href({ id: article.id })} aria-labelledby={`article-title-${article.id}`}>
+      <a data-article-link="" class="group flex items-start gap-[22px] rounded-md py-[26px] transition-colors hover:bg-surface max-[760px]:gap-[15px]" href={article.kind === 'bookmark' ? article.url : routes.article.href({ id: article.id })} target={article.kind === 'bookmark' ? '_blank' : undefined} rel={article.kind === 'bookmark' ? 'noopener noreferrer' : undefined} aria-labelledby={`article-title-${article.id}`}>
       <div class="flex size-28 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-surface text-subtle max-[760px]:h-[89px] max-[760px]:w-[78px] max-[420px]:h-[74px] max-[420px]:w-[60px] [&>svg]:size-[30px]" aria-hidden="true">
         {article.image ? <img class="size-full object-cover" src={article.image} alt="" loading="lazy" /> : <BookmarkIcon />}
       </div>
       <div class="min-w-0 flex-1">
-        <div class="flex items-center gap-2 font-mono text-[10px] text-subtle max-[760px]:flex-wrap max-[760px]:gap-x-1.5 max-[760px]:gap-y-1">{article.kind === 'video' ? `Video · YouTube${article.video?.duration ? ` · ${videoTime(article.video.duration)}` : ''}${article.author ? ` · ${article.author}` : ''}` : <>{article.site} <span>·</span> {article.readingMinutes} min read</>}</div>
+        <div class="flex items-center gap-2 font-mono text-[10px] text-subtle max-[760px]:flex-wrap max-[760px]:gap-x-1.5 max-[760px]:gap-y-1">{article.kind === 'bookmark' ? <>Bookmark <span>·</span> {new URL(article.url).hostname.replace(/^www\./, '')} <span class="sr-only">(opens in a new tab)</span></> : article.kind === 'video' ? `Video · YouTube${article.video?.duration ? ` · ${videoTime(article.video.duration)}` : ''}${article.author ? ` · ${article.author}` : ''}` : <>{article.site} <span>·</span> {article.readingMinutes} min read</>}</div>
         <h3 id={`article-title-${article.id}`} class="group-hover:underline group-hover:underline-offset-4 mt-[7px] mb-[9px] text-[21px] leading-[1.35] font-semibold tracking-[-.6px] max-[760px]:text-[19px] max-[420px]:text-[17px]">{article.title}</h3>
         <p class="line-clamp-2 text-xs leading-[1.8] text-muted">{article.video?.note || article.description || (article.kind === 'video' ? 'Open this video to highlight useful moments.' : '')}</p>
         {article.warnings.length > 0 && <div class="mt-[11px] text-[10px] text-muted"><span class="underline decoration-dotted underline-offset-3" title={article.warnings.join('\n')}>Some images unavailable</span></div>}
@@ -295,7 +300,7 @@ function ArticleActions(handle: Handle<ArticleActionProps & { scope: 'saved' | '
     const { article, scope, busyId } = handle.props
     const id = `${scope}-menu-${article.id}`
     return <div>
-      <button id={`${scope}-actions-${article.id}`} type="button" popoverTarget={id} aria-label={`Actions for ${article.title}`} aria-expanded={open ? 'true' : 'false'} aria-controls={id} title="Article actions" disabled={Boolean(busyId)} class="flex size-9 items-center justify-center rounded-md text-muted transition-colors hover:bg-control hover:text-ink disabled:opacity-50" mix={ref(node => { trigger = node })}>
+      <button id={`${scope}-actions-${article.id}`} type="button" popoverTarget={id} aria-label={`Actions for ${article.title}`} aria-expanded={open ? 'true' : 'false'} aria-controls={id} title="Item actions" disabled={Boolean(busyId)} class="flex size-9 items-center justify-center rounded-md text-muted transition-colors hover:bg-control hover:text-ink disabled:opacity-50" mix={ref(node => { trigger = node })}>
         {busyId === article.id ? <ArrowPathIcon class="size-4 animate-spin" /> : <EllipsisVerticalIcon class="size-5" />}
       </button>
       <div id={id} popover="auto" aria-label={`Actions for ${article.title}`} class="fixed inset-auto m-0 w-[240px] max-w-[calc(100vw-16px)] rounded-lg border border-line bg-paper p-1.5 text-ink shadow-lg" mix={[

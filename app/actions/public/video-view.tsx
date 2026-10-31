@@ -24,6 +24,7 @@ export const VideoView = clientEntry(import.meta.url + '#VideoView', function Vi
   let editingId = initialHighlight?.id ?? ''
   let savedNote = handle.props.noteDraft ?? article.video?.note ?? ''
   let busy = false
+  let retryingTranscript = false
   let error = handle.props.initialError ?? ''
   let playerError = ''
   let notice = ''
@@ -140,7 +141,20 @@ export const VideoView = clientEntry(import.meta.url + '#VideoView', function Vi
           <section class="mt-8 border-t border-line pt-6" aria-labelledby="transcript-heading">
             <h2 id="transcript-heading" class="text-sm font-semibold">Transcript</h2>
             {cues.length ? <p class="mt-2 text-xs text-muted">Select a passage to highlight its time range. Click a timestamp to play from there.</p>
-              : <p class="mt-2 text-xs leading-relaxed text-muted">A transcript wasn’t available. You can highlight using the player or enter times above. Import subtitles below to select passages.</p>}
+              : <>
+                <p class="mt-2 text-xs leading-relaxed text-muted">No transcript has been saved. Retry fetching from YouTube or import subtitles below. You can still highlight using the player or enter times above.</p>
+                <form method="post" action={routes.retryVideoTranscript.href({ id: article.id })} aria-busy={retryingTranscript} class="mt-3" mix={on('submit', async event => {
+                  event.preventDefault()
+                  if (busy) return
+                  retryingTranscript = true
+                  try {
+                    const data = await mutate(routes.retryVideoTranscript.href({ id: article.id }), new URLSearchParams())
+                    if (data?.article) { article = data.article; selected = undefined; notice = 'Transcript fetched.' }
+                  } finally { retryingTranscript = false; handle.update() }
+                })}>
+                  <button type="submit" class={secondary} disabled={busy}>{retryingTranscript ? 'Fetching transcript…' : 'Retry transcript'}</button>
+                </form>
+              </>}
             {selected && <div class="sticky top-3 z-10 mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-line-strong bg-paper p-3 shadow-sm" role="group" aria-label="Highlight selected transcript">
               <span class="text-xs text-muted">{videoTime(selected.start)}–{videoTime(selected.end)}</span>
               <button type="button" class={button} disabled={busy} mix={on('click', () => {

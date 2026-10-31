@@ -1,4 +1,4 @@
-import type { AppEnv, Article, ArticleSummary, QuoteDraft } from './types.ts'
+import type { AppEnv, Article, ArticleSummary, QuoteDraft, TranscriptCue } from './types.ts'
 import { Text } from 'domhandler'
 import { routes } from '../routes.ts'
 import { extractArticle } from './extract.ts'
@@ -6,8 +6,9 @@ import { fetchPublic, readLimited, publicUrl, ImportError, type Fetcher } from '
 import { captureQuote, quoteMarkdown, xPost } from './quotes.ts'
 import { validateNote } from '../actions/public/highlight-model.ts'
 import { youtubeVideo } from '../actions/public/youtube.ts'
-import { captureVideo, parseTranscript, videoMarkdown } from './videos.ts'
-import { and, desc, eq, exists, sql } from 'drizzle-orm'
+import { captureVideo, fetchVideoTranscript, parseTranscript, validateTranscript, videoMarkdown } from './videos.ts'
+import { captureBookmark } from './bookmarks.ts'
+import { and, desc, eq, exists, not, sql } from 'drizzle-orm'
 import { database, readingListMembership } from './database.ts'
 import { articleDeletions, readingList, savedArticles, videoTranscripts } from './schema.ts'
 export class ArticleStore {
@@ -118,17 +119,34 @@ export class ArticleStore {
     const article = await this.get(id)
     if (article?.kind !== 'video') return null
     const cues = parseTranscript(input, article.video!.duration)
+    return this.saveTranscript(article, cues)
+  }
+  async retryTranscript(id: string, signal?: AbortSignal): Promise<Article | null> {
+    const article = await this.get(id)
+    if (article?.kind !== 'video') return null
+    if (article.transcript?.length) return article
+    const captured = await fetchVideoTranscript(article.url, this.fetcher, signal)
+    if (!captured.transcript.length) throw new ImportError('YouTube did not provide captions for this video. Try again later or import subtitles below.')
+    const duration = article.video!.duration ?? captured.duration
+    const cues = validateTranscript(captured.transcript, duration)
+    return this.saveTranscript({ ...article, video: { ...article.video!, duration } }, cues, true)
+  }
+  private async saveTranscript(article: Article, cues: TranscriptCue[], onlyIfMissing = false): Promise<Article | null> {
     const db = this.db
+    const empty = sql`json_array_length(${videoTranscripts.cues})=0`
+    const missing = not(exists(db.select({ articleId: videoTranscripts.articleId }).from(videoTranscripts)
+      .where(and(eq(videoTranscripts.articleId, article.id), sql`json_array_length(${videoTranscripts.cues})>0`))))
     // Existing highlights retain their captured excerpt when the transcript changes.
+    // A retry must not replace subtitles imported while its fetch was in flight.
     await db.batch([
+      db.update(savedArticles).set({ markdown: videoMarkdown(article.title, article.url, cues) + (article.image ? `\n![Video thumbnail](${article.image})\n` : ''), text: cues.map(cue => cue.text).join('\n'),
+        summary: sql`json_set(${savedArticles.summary}, '$.description', ${cues.map(cue => cue.text).join(' ').slice(0, 240)}, '$.video.duration', coalesce(json_extract(${savedArticles.summary}, '$.video.duration'), ${article.video!.duration}))`,
+      }).where(and(this.owned(article.id), onlyIfMissing ? missing : undefined)),
       db.insert(videoTranscripts).select(db.select({ articleId: savedArticles.id, cues: sql`${JSON.stringify(cues)}`.as('cues') }).from(savedArticles)
-        .where(and(eq(savedArticles.id, id), eq(savedArticles.userId, this.userId))))
-        .onConflictDoUpdate({ target: videoTranscripts.articleId, set: { cues } }),
-      db.update(savedArticles).set({ markdown: videoMarkdown(article.title, article.url, cues), text: cues.map(cue => cue.text).join('\n'),
-        summary: sql`json_set(${savedArticles.summary}, '$.description', ${cues.map(cue => cue.text).join(' ').slice(0, 240)})`,
-      }).where(and(eq(savedArticles.id, id), eq(savedArticles.userId, this.userId))),
+        .where(this.owned(article.id)))
+        .onConflictDoUpdate({ target: videoTranscripts.articleId, set: { cues }, setWhere: onlyIfMissing ? empty : undefined }),
     ])
-    return this.get(id)
+    return this.get(article.id)
   }
   private async saveVideo(input: string, signal?: AbortSignal): Promise<{ article: Article; duplicate: boolean }> {
     const video = youtubeVideo(input)!
@@ -166,6 +184,49 @@ export class ArticleStore {
       if (!article) throw new Error('Video was not persisted')
       if (article.id !== id && keys.length) await this.env.IMAGES.delete(keys)
       return { article, duplicate: article.id !== id }
+    } catch (error) {
+      if (keys.length) await this.env.IMAGES.delete(keys)
+      throw error
+    }
+  }
+  async saveBookmark(input: string, signal?: AbortSignal): Promise<{ article: Article; duplicate: boolean }> {
+    const source = publicUrl(input.trim()).href
+    const existing = await this.find(source)
+    if (existing) return { article: existing, duplicate: true }
+    const captured = await captureBookmark(source, this.fetcher, signal)
+    const canonical = await this.find(captured.url)
+    if (canonical) return { article: canonical, duplicate: true }
+    const id = crypto.randomUUID()
+    const keys: string[] = []
+    let image: string | null = null
+    try {
+      if (captured.image) {
+        try {
+          const fetched = await fetchPublic(captured.image, this.fetcher, signal)
+          const contentType = fetched.response.headers.get('Content-Type')?.split(';')[0].toLowerCase() ?? ''
+          const extension = ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/avif': 'avif' } as Record<string, string>)[contentType]
+          if (!extension) { await fetched.response.body?.cancel(); throw new Error('Unsupported preview') }
+          const body = await readLimited(fetched.response, 5 * 1024 * 1024)
+          const file = `1.${extension}`
+          const key = `${id}/${file}`
+          await this.env.IMAGES.put(key, body, { httpMetadata: { contentType } })
+          keys.push(key)
+          image = routes.image.href({ id, file })
+        } catch { /* A preview image is optional. */ }
+      }
+      if (signal?.aborted) throw new ImportError('The import was cancelled. Please try again.')
+      const summary: ArticleSummary = {
+        kind: 'bookmark', id, url: captured.url, title: captured.title, site: captured.site, description: captured.description,
+        author: null, savedAt: new Date().toISOString(), readingMinutes: 0, image, imageCount: keys.length, warnings: [], inReadingList: false,
+      }
+      const text = [summary.title, summary.description, summary.url].filter(Boolean).join('\n\n')
+      const escape = (value: string) => value.replace(/[\\`*_[\]<>]/g, '\\$&')
+      const markdown = `# ${escape(summary.title)}\n\nSource: ${summary.url}\n\n${escape(summary.description)}\n`
+      await this.db.insert(savedArticles).values({ id, userId: this.userId, url: summary.url, summary, markdown, text, savedAt: summary.savedAt }).onConflictDoNothing().run()
+      const winner = await this.find(summary.url)
+      if (!winner) throw new Error('Bookmark was not persisted')
+      if (winner.id !== id && keys.length) await this.env.IMAGES.delete(keys)
+      return { article: winner, duplicate: winner.id !== id }
     } catch (error) {
       if (keys.length) await this.env.IMAGES.delete(keys)
       throw error

@@ -53,6 +53,7 @@ export function createAppController(env?: AppEnv, fetcher?: Fetcher) {
       return Response.json({ error: 'Could not load this article. Please try again.' }, { status: 503 })
     }
     if (!article) return Response.json({ error: 'Article not found.' }, { status: 404 })
+    if (article.kind === 'bookmark') return Response.json({ error: 'Bookmarks do not have highlights.' }, { status: 422 })
     const formSubmission = article.kind === 'video' && !request.headers.get('Content-Type')?.includes('application/json')
     const native = formSubmission && !request.headers.get('Accept')?.includes('application/json')
     const fail = async (message: string, status: number) => native
@@ -138,6 +139,7 @@ export function createAppController(env?: AppEnv, fetcher?: Fetcher) {
         const store = storeFor(context)
         const article = await store?.get(context.params.id)
         if (!article) return context.render(<ArticleNotFoundPage />, { status: 404 })
+        if (article.kind === 'bookmark') return new Response(null, { status: 302, headers: { Location: article.url } })
         return context.render(<ArticlePage article={article} highlights={await highlightsFor(context)!.list(article.id)} editHighlightId={context.url.searchParams.get('editHighlight') ?? undefined} />)
       },
       async readingList(context) {
@@ -246,6 +248,25 @@ export function createAppController(env?: AppEnv, fetcher?: Fetcher) {
           return json ? Response.json({ error: message }, { status }) : context.render(<ArticlePage article={article} highlights={await highlightsFor(context)!.list(article.id)} error={message} />, { status })
         }
       },
+      async retryVideoTranscript(context) {
+        const origin = context.request.headers.get('Origin')
+        if ((origin && origin !== context.url.origin) || context.request.headers.get('Sec-Fetch-Site') === 'cross-site') return Response.json({ error: 'Please edit transcripts from Juniper.' }, { status: 403 })
+        const store = storeFor(context)
+        if (!store) return Response.json({ error: 'Storage is unavailable.' }, { status: 503 })
+        const article = await store.get(context.params.id)
+        if (article?.kind !== 'video') return Response.json({ error: 'Video not found.' }, { status: 404 })
+        const json = context.request.headers.get('Accept')?.includes('application/json')
+        try {
+          const updated = await store.retryTranscript(article.id, context.request.signal)
+          if (!updated) return Response.json({ error: 'Video not found.' }, { status: 404 })
+          if (json) return Response.json({ article: updated })
+          return new Response(null, { status: 303, headers: { Location: routes.article.href({ id: article.id }) } })
+        } catch (error) {
+          const message = error instanceof ImportError ? error.message : 'Could not save the transcript. Please try again.'
+          return json ? Response.json({ error: message }, { status: 503 })
+            : context.render(<ArticlePage article={article} highlights={await highlightsFor(context)!.list(article.id)} error={message} />, { status: 503 })
+        }
+      },
       async save(context) {
         const store = storeFor(context)
         const json = context.request.headers.get('Accept')?.includes('application/json')
@@ -256,14 +277,19 @@ export function createAppController(env?: AppEnv, fetcher?: Fetcher) {
         let message = ''
         let status = 422
         let draft: QuoteDraft | undefined
+        let bookmark = false
+        let submittedUrl = ''
         try {
           if (!store) { status = 503; throw new ImportError('Article storage is not configured. Start the app with npm run dev.') }
           const bytes = await readLimited(new Response(context.request.body, { headers: context.request.headers }), 320_000)
           const form = await new Response(bytes, { headers: context.request.headers }).formData()
           const url = form.get('url')
-          if (typeof url !== 'string' || url.length > 4096) throw new ImportError('Enter a valid article URL.')
-          if (form.get('capture') === 'manual' && !xPost(url)) throw new ImportError('Paste an X post URL to save a quote.')
-          if (xPost(url)) {
+          bookmark = form.get('kind') === 'bookmark'
+          if (typeof url !== 'string' || url.length > 4096) throw new ImportError('Enter a valid website URL.')
+          submittedUrl = url
+          if (form.has('kind') && !['auto', 'bookmark'].includes(String(form.get('kind')))) throw new ImportError('Choose a valid content type.')
+          if (!bookmark && form.get('capture') === 'manual' && !xPost(url)) throw new ImportError('Paste an X post URL to save a quote.')
+          if (!bookmark && xPost(url)) {
             if (!form.has('quoteText')) {
               const post = xPost(url)!
               draft = form.get('capture') === 'manual' ? { url: post.url, text: '', author: post.handle ? `@${post.handle}` : '', note: '' }
@@ -274,16 +300,17 @@ export function createAppController(env?: AppEnv, fetcher?: Fetcher) {
             const text = form.get('quoteText'), author = form.get('author'), note = form.get('note')
             if (typeof text !== 'string' || typeof author !== 'string' || typeof note !== 'string') throw new ImportError('Invalid quote submission.')
             draft = { url, text, author, note }
-          } else if (form.has('quoteText')) throw new ImportError('Enter a link to an X post.')
-          const result = draft ? await store.saveQuote(draft) : await store.save(url, AbortSignal.timeout(90000))
+          } else if (!bookmark && form.has('quoteText')) throw new ImportError('Enter a link to an X post.')
+          const result = bookmark ? await store.saveBookmark(url, AbortSignal.timeout(30_000))
+            : draft ? await store.saveQuote(draft) : await store.save(url, AbortSignal.timeout(90000))
           if (json) return Response.json(result, { status: result.duplicate ? 200 : 201 })
           return new Response(null, { status: 303, headers: { Location: routes.home.href() } })
         } catch (error) {
-          message = error instanceof ImportError ? error.message : error instanceof DOMException && error.name === 'TimeoutError' ? 'The website took too long to respond. Please try again.' : 'We could not save this article. Please try again.'
+          message = error instanceof ImportError ? error.message : error instanceof DOMException && error.name === 'TimeoutError' ? 'The website took too long to respond. Please try again.' : 'We could not save this item. Please try again.'
           if (!(error instanceof ImportError)) { console.error('Article import failed:', error); status = 502 }
         }
         if (json) return Response.json({ error: message }, { status })
-        return context.render(<HomePage articles={await store?.list() ?? []} error={message} draft={draft} />, { status })
+        return context.render(<HomePage articles={await store?.list() ?? []} error={message} draft={draft} bookmark={bookmark} submittedUrl={submittedUrl} />, { status })
       },
       async markdown(context) {
         const store = storeFor(context)

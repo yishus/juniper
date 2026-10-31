@@ -34,30 +34,59 @@ export function parseTranscript(input: string, duration: number | null = null): 
   return validateTranscript(cues, duration)
 }
 
-// Public watch pages sometimes include caption tracks. This is best effort:
-// playback and manual highlights work even when YouTube withholds captions.
-interface PublicPlayerResponse {
+interface PlayerResponse {
   videoDetails?: { lengthSeconds?: unknown }
+  playabilityStatus?: { status?: string; reason?: string }
   captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: { baseUrl?: unknown; languageCode?: unknown }[] } }
 }
-function playerResponse(html: string): PublicPlayerResponse | null {
-  const match = /(?:var\s+)?ytInitialPlayerResponse\s*=\s*/.exec(html)
-  if (!match) return null
-  const start = match.index + match[0].length
-  let depth = 0, quoted = false, escaped = false
-  for (let index = start; index < html.length; index++) {
-    const char = html[index]
-    if (quoted) {
-      if (escaped) escaped = false
-      else if (char === '\\') escaped = true
-      else if (char === '"') quoted = false
-    } else if (char === '"') quoted = true
-    else if (char === '{') depth++
-    else if (char === '}' && --depth === 0) {
-      try { return JSON.parse(html.slice(start, index + 1)) } catch { return null }
+
+class TranscriptBlockedError extends ImportError {
+  constructor() { super('YouTube is blocking transcript requests from Juniper’s server. Try again later or import subtitles downloaded locally.') }
+}
+
+export async function fetchVideoTranscript(input: string, fetcher: Fetcher = fetch, signal?: AbortSignal) {
+  const video = youtubeVideo(input)
+  if (!video) throw new ImportError('Enter a YouTube video URL.')
+  const deadline = AbortSignal.any([AbortSignal.timeout(12000), ...(signal ? [signal] : [])])
+  try {
+    const { response: watch } = await fetchPublic(video.url, fetcher, deadline)
+    const html = new TextDecoder().decode(await readLimited(watch, 3 * 1024 * 1024))
+    const key = /"INNERTUBE_API_KEY"\s*:\s*"([a-zA-Z0-9_-]+)"/.exec(html)?.[1]
+    if (!key) throw new Error('No player API key')
+
+    // Web caption URLs can require a browser-generated PO token. Ask the
+    // Android player for its caption tracks instead. This unofficial API can fail.
+    // The POST destination is fixed; never follow a redirect with its body.
+    const response = await fetcher(`https://www.youtube.com/youtubei/v1/player?key=${encodeURIComponent(key)}`, {
+      method: 'POST', redirect: 'manual', signal: deadline,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context: { client: { clientName: 'ANDROID', clientVersion: '20.10.38' } }, videoId: video.videoId }),
+    })
+    if (!response.ok) { await response.body?.cancel(); throw new Error('Player request failed') }
+    const player: PlayerResponse = JSON.parse(new TextDecoder().decode(await readLimited(response, 3 * 1024 * 1024)))
+    if (player.playabilityStatus?.status !== 'OK') {
+      if (player.playabilityStatus?.status === 'LOGIN_REQUIRED' && /bot|automated|unusual traffic/i.test(player.playabilityStatus.reason ?? '')) throw new TranscriptBlockedError()
+      throw new Error('Video unavailable')
     }
+    const length = Number(player.videoDetails?.lengthSeconds) * 1000
+    const duration = Number.isSafeInteger(length) && length > 0 && length <= maxVideoTime ? length : null
+    const tracks = player.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? []
+    const track = Array.isArray(tracks) ? tracks.find(track => track.languageCode === 'en') ?? tracks[0] : undefined
+    if (typeof track?.baseUrl !== 'string') return { duration, transcript: [] as TranscriptCue[] }
+    const url = new URL(track.baseUrl)
+    if (url.protocol !== 'https:' || url.hostname !== 'www.youtube.com' || url.pathname !== '/api/timedtext') throw new Error('Invalid caption URL')
+    url.searchParams.set('fmt', 'json3')
+    const { response: captions } = await fetchPublic(url.href, fetcher, deadline)
+    const data = JSON.parse(new TextDecoder().decode(await readLimited(captions, 2 * 1024 * 1024))) as { events?: { tStartMs: number; dDurationMs: number; segs?: { utf8?: string }[] }[] }
+    const transcript = validateTranscript((data.events ?? []).filter(event => event.segs?.some(seg => seg.utf8?.trim())).map(event => ({
+      start: event.tStartMs, end: event.tStartMs + event.dDurationMs, text: event.segs!.map(seg => seg.utf8 ?? '').join('').trim(),
+    })), duration)
+    return { duration, transcript }
+  } catch (error) {
+    if (signal?.aborted) throw new ImportError('The import was cancelled. Please try again.')
+    if (error instanceof TranscriptBlockedError) throw error
+    throw new ImportError('Could not fetch captions from YouTube. Try again or import subtitles below.')
   }
-  return null
 }
 
 export async function captureVideo(input: string, fetcher: Fetcher = fetch, signal?: AbortSignal) {
@@ -76,24 +105,10 @@ export async function captureVideo(input: string, fetcher: Fetcher = fetch, sign
   let duration: number | null = null
   let transcript: TranscriptCue[] = []
   try {
-    const captionSignal = AbortSignal.any([AbortSignal.timeout(8000), ...(signal ? [signal] : [])])
-    const { response } = await fetchPublic(video.url, fetcher, captionSignal)
-    const player = playerResponse(new TextDecoder().decode(await readLimited(response, 3 * 1024 * 1024)))
-    const length = Number(player?.videoDetails?.lengthSeconds) * 1000
-    if (Number.isSafeInteger(length) && length > 0 && length <= maxVideoTime) duration = length
-    const tracks: { baseUrl?: unknown; languageCode?: unknown }[] = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? []
-    const track = Array.isArray(tracks) ? tracks.find(track => track.languageCode === 'en') ?? tracks[0] : undefined
-    if (typeof track?.baseUrl === 'string') {
-      const url = new URL(track.baseUrl)
-      if (url.protocol !== 'https:' || url.hostname !== 'www.youtube.com' || url.pathname !== '/api/timedtext') throw new Error('Invalid caption URL')
-      url.searchParams.set('fmt', 'json3')
-      const { response: captions } = await fetchPublic(url.href, fetcher, captionSignal)
-      const data = JSON.parse(new TextDecoder().decode(await readLimited(captions, 2 * 1024 * 1024))) as { events?: { tStartMs: number; dDurationMs: number; segs?: { utf8?: string }[] }[] }
-      transcript = validateTranscript((data.events ?? []).filter(event => event.segs?.some(seg => seg.utf8?.trim())).map(event => ({
-        start: event.tStartMs, end: event.tStartMs + event.dDurationMs, text: event.segs!.map(seg => seg.utf8 ?? '').join('').trim(),
-      })), duration)
-    }
-  } catch { transcript = [] }
+    const captured = await fetchVideoTranscript(video.url, fetcher, signal)
+    duration = captured.duration
+    transcript = captured.transcript
+  } catch { /* Saving a video does not depend on its captions. */ }
   if (signal?.aborted) throw new ImportError('The import was cancelled. Please try again.')
   return { ...video, title: (metadata.title as string).slice(0, 500), author: typeof metadata.author_name === 'string' ? metadata.author_name.slice(0, 200) : null, duration, transcript }
 }

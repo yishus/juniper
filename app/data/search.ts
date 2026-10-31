@@ -15,14 +15,14 @@ export const searchInput = z.object({
   savedAfter: z.iso.datetime({ offset: true }).optional(),
   savedBefore: z.iso.datetime({ offset: true }).optional(),
   inReadingList: z.boolean().optional(),
-  kind: z.enum(['article', 'quote', 'video']).optional(),
+  kind: z.enum(['article', 'quote', 'video', 'bookmark']).optional(),
   limit: z.number().int().min(1).max(50).default(10),
   cursor: z.string().max(8192).optional(),
 }).strict()
 export type SearchInput = z.input<typeof searchInput>
 
 export interface SearchResult {
-  kind: 'article' | 'quote' | 'video'
+  kind: ArticleSummary['kind']
   id: string
   title: string
   url: string

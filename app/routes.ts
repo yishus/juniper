@@ -18,6 +18,7 @@ export const routes = route({
   readingList: post('/articles/:id/reading-list'),
   quoteNote: post('/articles/:id/note'),
   videoTranscript: post('/articles/:id/transcript'),
+  retryVideoTranscript: post('/articles/:id/transcript/retry'),
   createHighlight: post('/articles/:id/highlights'),
   updateHighlight: post('/articles/:id/highlights/:highlightId/note'),
   deleteHighlight: post('/articles/:id/highlights/:highlightId/delete'),
