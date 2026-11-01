@@ -35,6 +35,13 @@
   }
 }
 
+/* Keep mobile form fields readable and prevent focus zoom in iOS Safari. */
+@media (max-width: 760px) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="hidden"]), textarea, select {
+    font-size: 16px;
+  }
+}
+
 @utility canvas-dots {
   background-image: radial-gradient(var(--color-line-strong) .65px, transparent .65px);
   background-size: 18px 18px;

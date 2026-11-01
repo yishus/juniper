@@ -8,7 +8,7 @@ export function LoginPage(handle: Handle<{ returnTo: string; siteKey?: string; s
     <link rel="stylesheet" href="/library.css" />
     {!handle.props.unavailable && <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>}
   </>}>
-    <main class="mx-auto flex min-h-screen max-w-[400px] flex-col justify-center px-6 py-12">
+    <main class="mx-auto flex min-h-screen max-w-[400px] flex-col justify-center px-6 py-12 wrap-anywhere">
       <div class="mb-10 flex items-center justify-between gap-4">
         <a data-rmx-document href={routes.login.href()} class="text-[28px] font-bold tracking-[-1.5px]" aria-label="Juniper sign in">juniper</a>
         <ThemeSelect />

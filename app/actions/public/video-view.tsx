@@ -5,7 +5,7 @@ import { routes } from '../../routes.ts'
 import { parseVideoTime, videoTime } from './youtube.ts'
 import { loadYouTubePlayer, type YouTubePlayer } from './youtube-player.ts'
 
-const field = 'mt-2 block w-full rounded-lg border border-line-strong bg-paper p-2.5 text-sm outline-none focus:border-ink disabled:opacity-60'
+const field = 'mt-2 block w-full min-w-0 rounded-lg border border-line-strong bg-paper p-2.5 text-sm outline-none focus:border-ink disabled:opacity-60'
 const button = 'rounded-lg bg-ink px-3.5 py-2 text-xs font-semibold text-paper hover:bg-accent-hover disabled:opacity-60'
 const secondary = 'rounded-lg border border-line-strong px-3 py-2 text-xs hover:bg-control disabled:opacity-60'
 const editableTime = (time: number) => videoTime(time) + (time % 1000 ? `.${String(time % 1000).padStart(3, '0')}` : '')
@@ -89,7 +89,7 @@ export const VideoView = clientEntry(import.meta.url + '#VideoView', function Vi
       <p role="status" aria-live="polite" class="mb-3 text-xs text-muted">{notice}</p>
       <div class="grid grid-cols-[minmax(0,1fr)_300px] items-start gap-8 max-[1000px]:grid-cols-1">
         <div class="min-w-0">
-          <iframe title={`YouTube player: ${article.title}`} src={`https://www.youtube.com/embed/${article.video!.videoId}?enablejsapi=1&playsinline=1`} class="aspect-video min-h-[200px] w-full rounded-xl border border-line bg-surface" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" mix={ref((node, signal) => {
+          <iframe title={`YouTube player: ${article.title}`} src={`https://www.youtube.com/embed/${article.video!.videoId}?enablejsapi=1&playsinline=1`} class="aspect-video w-full rounded-xl border border-line bg-surface" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" mix={ref((node, signal) => {
             const source = new URL(node.src); source.searchParams.set('origin', window.location.origin); node.src = source.href
             void loadYouTubePlayer().then(api => {
               if (signal.aborted) return

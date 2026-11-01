@@ -128,17 +128,17 @@ export const Reader = clientEntry(import.meta.url + '#Reader', function Reader(h
     const article = handle.props.article
     const quote = editor ? ('highlight' in editor ? editor.highlight.quote : editor.selection.quote) : ''
     return <div class="pb-20">
-      <div class="flex flex-wrap items-center justify-end gap-x-7 gap-y-4 border-b border-line py-5 max-[760px]:justify-between" role="group" aria-label="Reader appearance">
+      <div class="flex flex-wrap items-center justify-end gap-x-7 gap-y-4 border-b border-line py-5 max-[760px]:justify-between max-[600px]:flex-col max-[600px]:items-stretch" role="group" aria-label="Reader appearance">
         <fieldset>
           <legend class="sr-only">Font family</legend>
-          <div class="flex rounded-lg border border-line p-0.5">
+          <div class="flex w-fit rounded-lg border border-line p-0.5 max-[760px]:[&>button]:min-h-10">
             <button type="button" aria-pressed={settings.font === 'sans'} class={`rounded-md px-3 py-1.5 text-xs transition-colors ${settings.font === 'sans' ? 'bg-ink text-paper' : 'text-muted hover:bg-control'}`} mix={on('click', () => { settings.font = 'sans'; saveSettings() })}>Sans serif</button>
             <button type="button" aria-pressed={settings.font === 'serif'} class={`rounded-md px-3 py-1.5 font-serif text-xs transition-colors ${settings.font === 'serif' ? 'bg-ink text-paper' : 'text-muted hover:bg-control'}`} mix={on('click', () => { settings.font = 'serif'; saveSettings() })}>Serif</button>
           </div>
         </fieldset>
         <div class="flex items-center gap-3">
           <label for="reader-font-size" class="text-xs text-muted">Size</label>
-          <input id="reader-font-size" class="h-5 w-28 cursor-pointer accent-ink focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ink" type="range" min={MIN_FONT_SIZE} max={MAX_FONT_SIZE} step={1} value={settings.size} aria-valuetext={`${settings.size} pixels`} mix={on('input', event => { settings.size = normalizeReaderSettings({ ...settings, size: Number(event.currentTarget.value) }).size; saveSettings() })} />
+          <input id="reader-font-size" class="h-5 w-28 cursor-pointer accent-ink focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ink max-[760px]:h-11 max-[600px]:min-w-0 max-[600px]:flex-1" type="range" min={MIN_FONT_SIZE} max={MAX_FONT_SIZE} step={1} value={settings.size} aria-valuetext={`${settings.size} pixels`} mix={on('input', event => { settings.size = normalizeReaderSettings({ ...settings, size: Number(event.currentTarget.value) }).size; saveSettings() })} />
           <output for="reader-font-size" class="w-[4ch] font-mono text-[11px] text-subtle" aria-live="polite">{settings.size}px</output>
         </div>
       </div>
@@ -172,7 +172,7 @@ export const Reader = clientEntry(import.meta.url + '#Reader', function Reader(h
             }),
           ]}><MarkdownView nodes={handle.props.nodes} highlights={highlights} activeId={activeId} /></div>
         </article>
-        <aside class="sticky top-6 mt-12 max-h-[calc(100dvh-48px)] overflow-y-auto border-l border-line pl-6 max-[1000px]:static max-[1000px]:mt-0 max-[1000px]:max-h-none max-[1000px]:border-t max-[1000px]:border-l-0 max-[1000px]:pt-6 max-[1000px]:pl-0" aria-labelledby="highlights-title">
+        <aside class="sticky top-6 mt-12 min-w-0 max-h-[calc(100dvh-48px)] overflow-y-auto border-l border-line pl-6 max-[1000px]:static max-[1000px]:mt-0 max-[1000px]:max-h-none max-[1000px]:border-t max-[1000px]:border-l-0 max-[1000px]:pt-6 max-[1000px]:pl-0" aria-labelledby="highlights-title">
           <h2 id="highlights-title" class="mb-5 flex items-center gap-2 text-sm font-semibold">Highlights <span class="rounded border border-line bg-surface px-1.5 font-mono text-[10px] text-subtle">{highlights.length}</span></h2>
           <div aria-live="polite" aria-atomic="true">{error && <p role="alert" class="mb-4 rounded-lg border border-line-strong bg-surface p-3 text-xs">{error}</p>}</div>
           {editor && <form class="mb-5 rounded-lg border border-line-strong p-3" mix={on('submit', event => { event.preventDefault(); const current = editor; if (current) void ('highlight' in current ? saveNote(current.highlight) : saveHighlight(current.selection, draft)) })}>

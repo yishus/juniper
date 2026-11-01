@@ -72,10 +72,14 @@ export const Library = clientEntry(import.meta.url + '#Library', function Librar
 
   function positionPopover() {
     const trigger = document.getElementById('add-article-trigger')
-    if (!trigger || !popover) return
+    if (!trigger || !popover?.hasAttribute('popover')) return
     const bounds = trigger.getBoundingClientRect()
-    popover.style.top = `${bounds.bottom + 8}px`
-    popover.style.right = `${Math.max(16, document.documentElement.clientWidth - bounds.right)}px`
+    const top = Math.max(16, bounds.bottom + 8)
+    const viewportWidth = document.documentElement.clientWidth
+    const width = popover.offsetWidth || Math.min(400, viewportWidth - 32)
+    popover.style.top = `${top}px`
+    popover.style.right = `${Math.max(16, Math.min(viewportWidth - bounds.right, viewportWidth - width - 16))}px`
+    popover.style.maxHeight = `calc(100dvh - ${top + 16}px)`
   }
 
   handle.queueTask(() => {
@@ -191,7 +195,7 @@ export const Library = clientEntry(import.meta.url + '#Library', function Librar
             </form>
             <a class="min-w-0 flex-1 rounded-sm hover:underline hover:underline-offset-4" href={routes.article.href({ id: article.id })}>
               <span class="block truncate text-sm font-medium">{article.title}</span>
-              <span class="mt-0.5 block font-mono text-[10px] text-subtle">{article.site} · {article.readingMinutes} min read</span>
+              <span class="mt-0.5 block truncate font-mono text-[10px] text-subtle">{article.site} · {article.readingMinutes} min read</span>
             </a>
             <ArticleActions article={article} scope="reading" busyId={busyId} onDelete={deleteArticle} onReadingList={setReadingList} />
           </li>)}
@@ -200,20 +204,20 @@ export const Library = clientEntry(import.meta.url + '#Library', function Librar
       <section aria-labelledby="collection-title">
         <div class="flex items-center justify-between gap-5 pb-[18px] max-[760px]:flex-col max-[760px]:items-start max-[760px]:gap-4">
           <h1 id="collection-title" class="flex items-center gap-2 text-sm font-semibold whitespace-nowrap">Library <span class="inline-flex h-[23px] min-w-[23px] items-center justify-center rounded-md border border-line bg-surface px-1.5 font-mono text-[11px] leading-none text-muted">{articles.length}</span></h1>
-          <div class="flex items-center gap-2.5 max-[760px]:w-full">
-            <div class="flex min-h-9 items-center gap-1.5 rounded-[7px] border border-line bg-paper px-2.5 focus-within:border-ink max-[760px]:min-w-0 max-[760px]:flex-1">
+          <div class="flex min-w-0 items-center gap-2.5 max-[760px]:w-full max-[420px]:flex-wrap">
+            <div class="flex min-h-9 items-center gap-1.5 rounded-[7px] border border-line bg-paper px-2.5 focus-within:border-ink max-[760px]:min-h-11 max-[760px]:min-w-0 max-[760px]:flex-1 max-[420px]:basis-full">
               <span aria-hidden="true" class="text-subtle [&>svg]:size-4"><MagnifyingGlassIcon /></span>
               <label class="sr-only" for="search">Search your library</label>
               <input id="search" class="w-[140px] min-w-0 bg-transparent py-[5px] text-xs outline-none placeholder:text-subtle max-[760px]:w-full" type="search" placeholder="Search your list" value={query} mix={on('input', event => { query = event.currentTarget.value; handle.update() })} />
             </div>
             <label class="sr-only" for="sort">Sort articles</label>
-            <select id="sort" class="min-h-9 max-w-[140px] cursor-pointer rounded-[7px] border border-line bg-paper px-[9px] py-1.5 text-xs text-muted" value={sort} mix={on('change', event => { sort = event.currentTarget.value; handle.update() })}>
+            <select id="sort" class="min-h-9 max-w-[140px] cursor-pointer rounded-[7px] border border-line bg-paper px-[9px] py-1.5 text-xs text-muted max-[760px]:min-h-11 max-[760px]:max-w-full" value={sort} mix={on('change', event => { sort = event.currentTarget.value; handle.update() })}>
               <option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="title">Title A–Z</option>
             </select>
           </div>
         </div>
         <div class="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filter by type">
-          {(['all', 'article', 'quote', 'video', 'bookmark'] as const).map(value => <button type="button" aria-pressed={kind === value} class={`rounded-md border px-3 py-1.5 text-xs ${kind === value ? 'border-ink bg-ink text-paper' : 'border-line text-muted hover:bg-control'}`} mix={on('click', () => { kind = value; handle.update() })}>{value === 'all' ? 'All' : value === 'article' ? 'Articles' : value === 'video' ? 'Videos' : value === 'bookmark' ? 'Bookmarks' : 'Quotes'}</button>)}
+          {(['all', 'article', 'quote', 'video', 'bookmark'] as const).map(value => <button type="button" aria-pressed={kind === value} class={`min-h-9 rounded-md border px-3 py-1.5 text-xs max-[760px]:min-h-11 ${kind === value ? 'border-ink bg-ink text-paper' : 'border-line text-muted hover:bg-control'}`} mix={on('click', () => { kind = value; handle.update() })}>{value === 'all' ? 'All' : value === 'article' ? 'Articles' : value === 'video' ? 'Videos' : value === 'bookmark' ? 'Bookmarks' : 'Quotes'}</button>)}
         </div>
         {!articles.length ? <div class="canvas-dots flex min-h-[366px] flex-col items-center justify-center rounded-xl border border-line bg-surface px-6 py-8 text-center max-[420px]:px-4 min-[1400px]:min-h-[390px]">
           <div class="mb-[22px] text-ink" aria-hidden="true"><DocumentTextIcon class="size-20" /></div>
@@ -257,8 +261,8 @@ function ArticleRow(handle: Handle<ArticleActionProps>) {
       <div class="absolute top-5 right-0"><ArticleActions {...handle.props} scope="saved" /></div>
     </article>
     return <article id={`saved-article-${article.id}`} class="relative border-b border-line">
-      <a data-article-link="" class="group flex items-start gap-[22px] rounded-md py-[26px] transition-colors hover:bg-surface max-[760px]:gap-[15px]" href={article.kind === 'bookmark' ? article.url : routes.article.href({ id: article.id })} target={article.kind === 'bookmark' ? '_blank' : undefined} rel={article.kind === 'bookmark' ? 'noopener noreferrer' : undefined} aria-labelledby={`article-title-${article.id}`}>
-      <div class="flex size-28 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-surface text-subtle max-[760px]:h-[89px] max-[760px]:w-[78px] max-[420px]:h-[74px] max-[420px]:w-[60px] [&>svg]:size-[30px]" aria-hidden="true">
+      <a data-article-link="" class="group flex items-start gap-[22px] rounded-md py-[26px] transition-colors hover:bg-surface max-[760px]:grid max-[760px]:grid-cols-[64px_minmax(0,1fr)] max-[760px]:gap-x-3 max-[760px]:gap-y-2 max-[760px]:py-5 max-[420px]:grid-cols-[60px_minmax(0,1fr)]" href={article.kind === 'bookmark' ? article.url : routes.article.href({ id: article.id })} target={article.kind === 'bookmark' ? '_blank' : undefined} rel={article.kind === 'bookmark' ? 'noopener noreferrer' : undefined} aria-labelledby={`article-title-${article.id}`}>
+      <div class="flex size-28 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-surface text-subtle max-[760px]:row-span-2 max-[760px]:size-16 max-[420px]:size-[60px] [&>svg]:size-[30px]" aria-hidden="true">
         {article.image ? <img class="size-full object-cover" src={article.image} alt="" loading="lazy" /> : <BookmarkIcon />}
       </div>
       <div class="min-w-0 flex-1">
@@ -267,11 +271,11 @@ function ArticleRow(handle: Handle<ArticleActionProps>) {
         <p class="line-clamp-2 text-xs leading-[1.8] text-muted">{article.video?.note || article.description || (article.kind === 'video' ? 'Open this video to highlight useful moments.' : '')}</p>
         {article.warnings.length > 0 && <div class="mt-[11px] text-[10px] text-muted"><span class="underline decoration-dotted underline-offset-3" title={article.warnings.join('\n')}>Some images unavailable</span></div>}
       </div>
-      <div class="flex w-[105px] flex-col items-end gap-3.5 pt-0.5 text-right max-[760px]:w-[76px] max-[420px]:w-[45px]">
-        <time class="font-mono text-[10px] text-subtle max-[760px]:text-[9px] max-[420px]:hidden" dateTime={article.savedAt}>{date}</time>
+      <div class="flex w-[105px] shrink-0 flex-col items-end gap-3.5 pt-0.5 text-right max-[760px]:col-start-2 max-[760px]:min-h-11 max-[760px]:w-auto max-[760px]:items-start max-[760px]:justify-center max-[760px]:pr-12 max-[760px]:pt-0 max-[760px]:text-left">
+        <time class="font-mono text-[10px] text-subtle" dateTime={article.savedAt}>{date}</time>
       </div>
       </a>
-      <div class="absolute top-[56px] right-0 max-[420px]:top-[26px]">
+      <div class="absolute top-[56px] right-0 max-[760px]:top-auto max-[760px]:bottom-5">
         <ArticleActions {...handle.props} scope="saved" />
       </div>
     </article>
@@ -300,7 +304,7 @@ function ArticleActions(handle: Handle<ArticleActionProps & { scope: 'saved' | '
     const { article, scope, busyId } = handle.props
     const id = `${scope}-menu-${article.id}`
     return <div>
-      <button id={`${scope}-actions-${article.id}`} type="button" popoverTarget={id} aria-label={`Actions for ${article.title}`} aria-expanded={open ? 'true' : 'false'} aria-controls={id} title="Item actions" disabled={Boolean(busyId)} class="flex size-9 items-center justify-center rounded-md text-muted transition-colors hover:bg-control hover:text-ink disabled:opacity-50" mix={ref(node => { trigger = node })}>
+      <button id={`${scope}-actions-${article.id}`} type="button" popoverTarget={id} aria-label={`Actions for ${article.title}`} aria-expanded={open ? 'true' : 'false'} aria-controls={id} title="Item actions" disabled={Boolean(busyId)} class="flex size-9 items-center justify-center rounded-md text-muted transition-colors hover:bg-control hover:text-ink disabled:opacity-50 max-[760px]:size-11" mix={ref(node => { trigger = node })}>
         {busyId === article.id ? <ArrowPathIcon class="size-4 animate-spin" /> : <EllipsisVerticalIcon class="size-5" />}
       </button>
       <div id={id} popover="auto" aria-label={`Actions for ${article.title}`} class="fixed inset-auto m-0 w-[240px] max-w-[calc(100vw-16px)] rounded-lg border border-line bg-paper p-1.5 text-ink shadow-lg" mix={[

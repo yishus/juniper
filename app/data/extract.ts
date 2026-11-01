@@ -17,6 +17,8 @@ export function extractArticle(html: string, url: string) {
   const author = meta('author') || meta('article:author') || null
   const site = meta('og:site_name') || new URL(url).hostname.replace(/^www\./, '')
   for (const node of all) {
+    // Document classes can describe page features such as "has-newsletter-footer".
+    if (node.name === 'html' || node.name === 'body') continue
     if (ignoredTags.has(node.name) || node.attribs.hidden !== undefined || node.attribs['aria-hidden'] === 'true' ||
         noise.test(`${node.attribs.class ?? ''} ${node.attribs.id ?? ''}`)) removeElement(node)
   }
